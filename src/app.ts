@@ -13,11 +13,14 @@ export function buildApp(opts = {}) {
 
   app.register(cors, {
     origin: (origin, cb) => {
-      const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || ['*'];
+      const corsEnv = process.env.CORS_ORIGIN || '*';
+      const allowedOrigins = corsEnv.split(',').map(o => o.trim());
+      
       if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
         cb(null, true);
         return;
       }
+      console.warn(`Blocked by CORS: Origin "${origin}" not in [${allowedOrigins}]`);
       cb(new Error('Not allowed by CORS'), false);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -41,7 +44,10 @@ export function buildApp(opts = {}) {
           name: 'MIT',
         },
       },
-      servers: [{ url: 'http://localhost:3000', description: 'Local dev' }],
+      servers: [
+        { url: 'https://yf52k32pqn.us-east-1.awsapprunner.com', description: 'Production' },
+        { url: 'http://localhost:3000', description: 'Local dev' }
+      ],
       tags: [
         {
           name: 'Hospitals',

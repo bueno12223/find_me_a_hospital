@@ -4,7 +4,7 @@ import { PaginatedResponse } from '../../schemas/index.js';
 import { NotFoundError, ValidationError } from '../../errors/AppError.js';
 
 export class HospitalService {
-  constructor(private repository: HospitalRepository = new HospitalRepository()) {}
+  constructor(private repository: HospitalRepository = new HospitalRepository()) { }
 
   async getById(id: number): Promise<Hospital> {
     const hospital = await this.repository.findById(id);

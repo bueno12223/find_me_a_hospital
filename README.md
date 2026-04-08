@@ -1,4 +1,4 @@
-# 🚀 FindMeHospital - Production-Grade Geo API
+# FindMeHospital
 
 <div align="center">
   <img src="https://img.shields.io/badge/Node.js-20+-black?style=for-the-badge&logo=node.js" alt="Node.js" />
@@ -7,128 +7,108 @@
   <img src="https://img.shields.io/badge/PostGIS-GeoSpatial-15B06D?style=for-the-badge&logo=postgresql" alt="PostGIS" />
   <img src="https://img.shields.io/badge/TypeScript-Strict_Mode-blue?style=for-the-badge&logo=typescript" alt="TypeScript" />
   
-  <h3>High-Performance Hospital Registry API</h3>
-  <p>A production-ready geospatial search API optimized for fuzzy-matching, proximity lookups, and minimal-latency autocomplete queries.</p>
+  <p>Production-Grade Geospatial Hospital Search API optimized for fuzzy-matching, proximity lookups, and minimal-latency autocomplete queries.</p>
+  
+  <p>
+    <b>Live API:</b> <a href="https://yf52k32pqn.us-east-1.awsapprunner.com/docs">Swagger Documentation</a> 
+    • 
+    <b>Demo UI:</b> <a href="https://hospital-tactical-scan-339084358368.us-west1.run.app/">Live Web Preview</a>
+  </p>
 </div>
 
-<br />
+## Product Context
+While the original technical assessment asked for a generic "address lookup API", designing an architecture without a concrete use-case often leads to speculative technical decisions. 
 
-## 📖 Table of Contents
-1. [Setup & Configuration](#-setup--configuration)
-2. [Architecture & Data Flow](#-architecture--data-flow)
-3. [Key Technical Decisions](#-key-technical-decisions)
-4. [API Contract & Endpoints](#-api-contract--endpoints)
-5. [Known Limitations & Next Steps](#-known-limitations--next-steps)
+By giving the application a specific purpose **finding hospitals** the architectural requirements immediately snapped into focus. Knowing *exactly how* the API would be used by a real user interface dictated the query patterns (e.g., users naturally filter by state before searching text, driving the need for a composite index). This product first approach eliminated guesswork and anchored technical choices to practical decisions.
 
 ---
 
-## 🛠 Setup & Configuration
+## Architecture & Stack Decisions
+The service follows a strict three-layer separation: **Routes → Service → Repository**. following the clean architecture principles and the Fastify best practices.
 
-**Requirements:** `Docker Desktop` (o motor equivalente de contenedores para levantar Postgres+PostGIS) y `Node v20+`.
-
-**Levantando el ecosistema local paso a paso:**
-
-1. **Clonar e instalar dependencias:**
-   ```bash
-   pnpm install
-   ```
-
-2. **Levantar la Base de Datos con Docker:**
-   ```bash
-   docker compose up -d
-   ```
-   *(Esto descargará y arrancará el contenedor oficial `postgis/postgis` exponiendo el puerto 5432).*
-
-3. **Ejecutar Migraciones:**
-   ```bash
-   pnpm run migrate:up
-   ```
-   *(Crea las tablas, activa las extensiones geoespaciales y construye los índices especializados).*
-
-4. **Populemos la Base de Datos (Ingestión):**
-   ```bash
-   pnpm run dev:ingest
-   ```
-   *(Parsea e ingesta el dataset crudo en lotes de 1000 a la BD. Gracias al condicional `ON CONFLICT DO UPDATE`, este script es 100% idempotente y seguro de repetir).*
-
-5. **Iniciar el servidor:**
-   ```bash
-   pnpm run dev
-   ```
-
----
-
-## 🏗 Architecture
-
-| Capa | Elección | Justificación |
+| Decision | Choice | Rationale |
 | :--- | :--- | :--- |
-| **Runtime** | Node.js + TypeScript | Tipado estático asegurado desde el runtime hasta el cliente (TypeBox). |
-| **Framework Web** | Fastify | Más rápido que Express, integra validación ultra-rápida nativa basada en JSON Schema (vía `ajv`), crucial para latencias mínimas. |
-| **Base de Datos** | PostgreSQL + PostGIS | Ecosistema para queries geográficas nativas. Calcula distancias e índices espaciales a bajo nivel en la caché del motor. |
-| **Migrations** | `node-pg-migrate` | Utilizado en vez de las herramientas de ORMs debido a su compatibilidad absoluta con comandos crudos (`CREATE EXTENSION pg_trgm`). |
-| **Testing** | Vitest | Misma API de Jest pero para el ecosistema ESModules moderno (~850ms boot and test time). |
-| **Logging** | Pino | Viene out-of-the-box con Fastify. Proporciona _structured logging_ JSON, fundamental para observabilidad (Datadog/Elastic). |
+| **Framework** | **Fastify** | Schema-based request validation compiled at startup via AJV — critical for autocomplete latency. Express adds no equivalent. |
+| **Database** | **PostgreSQL + PostGIS** | Native geospatial types, GIST index for KNN and radius queries, GIN + `pg_trgm` for fuzzy text search. All three are prerequisites for this domain. |
+| **Query layer** | **Raw pg (no ORM)** | Prisma has no support for PostGIS geography casts (`::geography`) and its query planner often invalidates GIST indexes. Full SQL control is required here. |
+| **Migrations** | **node-pg-migrate** | Runs raw DDL cleanly. Required for `CREATE EXTENSION pg_trgm` and PostGIS-specific index syntax that ORMs cannot express. |
+| **Infrastructure** | **AWS App Runner + RDS** | Serverless container deployment connected to a managed PostgreSQL instance via a private VPC Connector. |
+| **Logging** | **Pino** | Ships with Fastify. Structured JSON output, zero config, compatible with Datadog/Elastic. |
+| **Testing** | **Vitest** | Native ESM support. ~850ms cold boot vs Jest's ~3s. Same API, faster feedback loop. |
 
 ---
 
-## 🏗 Arquitectura de Datos
-TypeScript
-{
-  "id": "number",
-  "name": "string",
-  "address": "string | null",
-  "city": "string",
-  "state": "string (ISO 2-char)",
-  "zip": "string (5-char)",
-  "location": "Point (Geometry 4326)",
-  "distance_meters": "number | optional"
-}
-### Estrategia de Indexación
-Para que las búsquedas se sientan instantáneas, implementamos tres niveles de indexación:
+## Setup & Configuration
+### Prerequisites
+Before running the application, you must have the following installed:
+- Node.js 20+
+- PostgreSQL 16+
+- Docker
+- pnpm
 
-- GIST (location): Permite búsquedas de radio y vecinos cercanos (KNN) en tiempo logarítmico.
-- GIN con pg_trgm (name): Habilita el "fuzzy search" para el autocompletado, permitiendo errores tipográficos leves sin penalizar el rendimiento.
-- Índice Compuesto (state, name): Optimización específica basada en el flujo de UI. Dado que el usuario filtra primero por Estado, este índice reduce el espacio de búsqueda drásticamente antes de aplicar el algoritmo de similitud de texto.
+### Environment Variables
+Theres 2 ways to run this application:
 
-## Technical Decisions
-
-### 1. Why not use Prisma or other ORMs?
-Para una aplicación profundamente orientada a datos geoespaciales, la abstracción de queries es un lastre. Prisma tiene un soporte geoespacial primitivo, ignora casts implícitos de `PostGIS` (ej: `::geography`), y sus compiladores modifican a menudo los _Query Execution Plans_ invalidando los índices GIST. Decidimos usar SQL crudo (`pg-pool`) en la capa de Repository asegurando el 100% del control del query-planner en PostGIS.
-
-### 2. Ingesta de Datos Idempotente
-El script procesa lotes del dataset utilizando un insert de bloque:
-**Decisión crítica:** La ingesta no inserta filas ciegamente. Tiene una cláusula `ON CONFLICT (name, address, zip) DO UPDATE`.
-Esto hace al script **completamente idempotente**. Previene duplicados absolutos si corre en un CRON Job, permitiéndonos actualizar la data operativa contínuamente.
-
-### 3. Estrategia de Testing (Focus en Critical Paths)
-Hay **21 tests** activos divididos en integración y unitarios (Service, DB Repository & Rutas). No persiguiendo un 100% de cobertura forzoso, sino:
-- **Enmascaramiento (500 Error Protection):** Comprobado unitariamente que el Central Error Handler intercepte crashes internos genéricos e inyecte `"An unexpected error occurred"` bloqueando la fuga de Stacktraces o detalles SQL hacia internet.
-- **Dominios de Paginación Exactos:** Garantizando en tests unitarios que la paginación para `getReverse` NUNCA contenga la metadata `"total"`, por ser este engañoso en búsquedas de métrica K-Nearest Neighbor (dónde no hay universo definido, solo vecinos próximos).
-- **Validación Rápida:** Forzamos a Fastify vía tests a interceptar coords fuera de [-90,90] en el milisengundo cero sin molestar a la base de datos. 
-
-### 4. Caching
-**Innecesario estructuralmente dadas las metas de volumen de la iteración.**
-El cuello de I/O está resuelto con índices compuestos. Implementar Redis agregaría una complejidad infraestructural e invalidaciones de State difíciles de justificar. **Sin embargo**, si quisiéramos paliar una campaña viral imprevista, un Caché LRU In-Memory a la altura del Service o un middleware en NodeJS capturando un Hash MD5 de la query serían extremadamente triviales de enchufar la próxima semana.
-
----
-
-## 📡 API Contract & Endpoints
-
-### 1. `GET /api/v1/hospitals/search`
-*Forward lookup para UI de Autocomplete.*
-- **Uso:** `?q=general hospital&state=CA&limit=10&offset=0`
-- **Query Estructural:**
-```sql
-SELECT * FROM hospitals
-WHERE name ILIKE $1 OR city ILIKE $1 OR zip = $2
-ORDER BY similarity(name, $3) DESC
-LIMIT $4 OFFSET $5;
+### A. Using Docker Compose
+```bash
+docker compose up --build
 ```
 
-### 2. `GET /api/v1/hospitals/reverse`
-*KNN estricto (K-Nearest Neighbors).* Omitimos intencionalmente `total` metadata en response ya que no existe restricción de universo.
-- **Uso:** `?lat=34.0522&lng=-118.2437&limit=5`
-- **Query Estructural:**
+### B. Using Local Dev Mode
+Set up the environment variables:
+```bash
+cp .env.example .env
+```
+
+Start the database:
+```bash
+docker compose up -d db
+```
+
+Run migrations:
+```bash
+pnpm run migrate:up
+```
+
+Ingest dataset:
+```bash
+pnpm run ingest
+```
+
+Start dev server:
+```bash
+pnpm run dev
+```
+
+---
+
+## Data Model & Indexing Strategy
+### Schema
+```sql
+id          SERIAL PRIMARY KEY
+name        TEXT NOT NULL
+address     TEXT
+city        TEXT NOT NULL
+state       CHAR(2) NOT NULL
+zip         CHAR(5) NOT NULL
+zip4        CHAR(4)
+location    GEOGRAPHY(POINT, 4326)   -- PostGIS spatial column
+```
+*The `location` column uses **GEOGRAPHY** (spherical model) rather than **GEOMETRY** (planar). This ensures `ST_Distance` returns meters on the Earth's surface rather than Euclidean units — accurate globally, not just within a single UTM zone.*
+
+---
+
+## API Endpoints & Queries
+### 1. `GET /search` (Fuzzy Autocomplete)
+```sql
+SELECT * FROM hospitals 
+WHERE (name % $1 OR city % $1 OR zip = $2) AND state = $3 
+ORDER BY similarity(name, $1) DESC 
+LIMIT $4 OFFSET $5;
+```
+Uses similarity ranking (`%`) powered by the `pg_trgm` GIN index for extremely fast fuzzy text matching and typo tolerance, avoiding costly full table scans.
+
+### 2. `GET /reverse` (KNN)
 ```sql
 SELECT id, name, city, state, zip,
        ST_Distance(location, ST_MakePoint($1, $2)::geography) AS distance_meters
@@ -136,55 +116,120 @@ FROM hospitals
 ORDER BY location <-> ST_MakePoint($1, $2)::geography
 LIMIT $3;
 ```
+Leverages the `<->` KNN (K-Nearest Neighbors) operator, which traverses the PostGIS GIST index to return the closest locations in `O(log n)` time without sorting the entire dataset.
 
-### 3. `GET /api/v1/hospitals/radius`
-*Cálculo Radial Esférico de Intersección Pura.*
-- **Uso:** `?lat=34.05&lng=-118.24&distance=10&limit=20`
-- **Query Estructural:**
+### 3. `GET /radius` (Circular Containment)
 ```sql
-SELECT *, ST_Distance(location, ST_MakePoint($1, $2)::geography) AS distance_meters
+SELECT *, ST_Distance(location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) as distance_meters
 FROM hospitals
-WHERE ST_DWithin(location, ST_MakePoint($1, $2)::geography, $3 * 1000)
-ORDER BY distance_meters
-LIMIT $4;
+WHERE ST_DWithin(location, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $3)
+ORDER BY distance_meters ASC
+LIMIT $4 OFFSET $5;
 ```
+`ST_DWithin` uses the geometry bounding box along with the GIST index to strictly narrow down the candidate rows efficiently *before* performing precise spherical distance calculations.
+
+### 4. `GET /:id` (Direct Lookup)
+Standard primary key lookup. Retrieves the full record of a specific hospital by its ID.
+
 ---
+### Index Strategy
+| Index | Type | Columns | Purpose |
+| :--- | :--- | :--- | :--- |
+| `idx_hospitals_location` | GIST | `location` | Enables KNN proximity search (`<->`) and radius containment (`ST_DWithin`) in O(log n) — avoids full table scan on every geo query. |
+| `idx_hospitals_name_trgm` | GIN + `pg_trgm` | `name` | Powers fuzzy autocomplete. Allows partial matches and minor typo tolerance without Elasticsearch. |
+| `idx_hospitals_state_name` | B-Tree composite | `(state, name)` | UI-driven optimization: users filter by state first. This index eliminates irrelevant rows before the trigram scan runs, reducing the working set by ~96%. |
 
-## 🚀 Deployment & AWS ECS (Express Mode)
-
-Para desplegar en **Amazon ECS** de forma rápida (Express Mode), utilizaremos **AWS Copilot** o el flujo estándar de **ECR + Fargate**.
-
-### 1. Preparación de Imagen (ECR)
-La app ya incluye un `Dockerfile` multietapa optimizado.
-
-```bash
-# 1. Login en AWS ECR (Reemplaza <region> y <account_id>)
-aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account_id>.dkr.ecr.<region>.amazonaws.com
-
-# 2. Construir imagen
-docker build -t findmehospital .
-
-# 3. Taggeas y subes
-docker tag findmehospital:latest 664418956405.dkr.ecr.us-east-2.amazonaws.com/findmehospital:latest
-docker push 664418956405.dkr.ecr.us-east-2.amazonaws.com/findmehospital:latest
-```
-
-### 2. Configuración en ECS
-- **Health Check:** La app expone `/health`. Configura tu Target Group para usar este endpoint.
-- **Variables de Entorno:** Es crítico pasar `DATABASE_URL` apuntando a tu instancia de RDS (PostgreSQL + PostGIS).
-- **Launch Type:** Recomendado **Fargate** para modo serverless/express.
-
-### 3. Pipeline de Migraciones
-El `Dockerfile` está configurado para ejecutar `pnpm run migrate:up` antes de iniciar el servidor (`CMD`). Esto asegura que tu base de datos en AWS siempre esté sincronizada con el código desplegado.
+**Design rationale:** The composite `(state, name)` index was added to optimize the query performance for the autocomplete feature, as users typically filter by state first. By this way the query execution plan only does a trigram scan on the filtered rows of the state.
 
 ---
 
-## 🚀 Known Limitations & Next Steps
+## Observability
+- Structured JSON logging via Pino on every request (`method`, `url`, `statusCode`, `responseTime`).
+- Error events logged with full `{ err }` serialization — stack traces captured as structured fields, not concatenated strings.
+- Health endpoint at `GET /health` for load balancer integration.
+- `/docs` (Swagger UI) serves as live API contract documentation.
 
+## Error Handling
+The error handler distinguishes three categories deliberately:
 
-Con más tiempo o scope, esto mejoraría notablemente:
+- **Schema validation errors (400)**: Fastify/AJV rejects malformed requests before the handler is called. Coordinates outside `[-90,90]` never reach the database.
+- **Domain errors (4xx)**: The service layer throws typed `AppError` subclasses (`NotFoundError`, `ValidationError`). These map to specific status codes without HTTP knowledge in the service.
+- **Unhandled errors (500)**: Stack traces are logged via Pino's structured `{ err }` serializer — compatible with log aggregators. The response body never leaks internals.
 
-1. **Contenedores de Inyección de Dependencias (DI):** Hoy inyecto un Service en las Routings por default-argument. Con más tiempo enchufaría `Awilix` para poder mockear toda la capa I/O en microtests globales.
-2. **Window Function Pagination:** Hoy los queries cuentan en paralelo con un `COUNT()`. Mudaríamos al uso de una _Window Expression analítica_ `COUNT(*) OVER() AS total_count` en PostGIS directamente extrayendo el `total` unificadamente en un único query.
-3. **Protecciones Nativas:** Añadir Rate-Limiting para evadir DDoS trivial en un form público (usando el módulo rápido `@fastify/rate-limit`).
-4. **Stress Testing Activo:** Cargar Artillería (Artillery) / K6 simulando spikes de 5,000 pings por segundo para refutar o darle soporte al postulado actual de de "La BD y el índice por sí solos nos escalan sin caché de Redis en esta fase de adopción".
+**Key distinction**: 4xx errors (client mistakes) are not logged as errors. Only 5xx events trigger error-level logs. This prevents alert fatigue in production monitoring.
+
+---
+
+## Data Ingestion Strategy
+The ingestion script (`scripts/ingest.ts`) is designed for production-grade reliability, not just an initial load. It processes the raw CSV dataset into our geospatial schema cleanly.
+
+- **Batch Processing**: Parses and inserts the dataset in batches of 500 rows. This keeps memory usage flat and prevents overwhelming the database connection.
+- **Idempotency by Design**: Uses `ON CONFLICT (name, address, zip) DO UPDATE`. The script can be run 100 times safely—it will never create duplicate rows, making it perfect for automated CRON jobs.
+---
+
+## Testing Strategy
+**21 tests** across unit and integration layers.
+
+**Unit tests (service layer)**
+- `getById` throws `NotFoundError` when repository returns null.
+- `getRadius` throws `ValidationError` when distance ≤ 0.
+- `getReverse` response never contains `meta.total` (KNN semantics).
+- Error handler maps `AppError` to correct status codes.
+- Error handler catches unhandled errors and blocks stacktrace leakage.
+
+**Integration tests (routes via app.inject)**
+- `GET /search` returns 400 when `q` is missing.
+- `GET /reverse` returns 400 for coordinates outside valid range — Fastify intercepts, DB is never queried.
+- `GET /:id` returns 404 with correct error shape for unknown ID.
+- `GET /search` happy path returns paginated envelope with correct meta shape.
+
+*The repository layer is mocked in unit tests using constructor injection with a default argument — no DI framework required, fully mockable in Vitest.*
+
+## Caching
+**Decision: Not implemented.** 
+The primary bottleneck for geospatial queries is I/O and query planning — both addressed through PostGIS indexes. At this dataset size (~8,000 hospitals), the GIST and GIN indexes make queries fast enough that caching adds operational complexity without measurable latency benefit.
+
+If traffic patterns changed, two approaches would be straightforward to add:
+- Redis with short TTL keyed on the full query hash — High-frequency identical queries (e.g., `/search?q=hospital&state=CA`).
+- In-process LRU cache at the service layer — no Redis needed — Single-record lookups (`/hospitals/:id`).
+
+---
+
+## Scalability & Bottlenecks
+Under meaningful concurrent load, the primary bottleneck is the database — specifically the parallel `COUNT(*)` queries used for pagination. Identified bottlenecks in order of impact:
+
+- `COUNT(*)` + data query run in parallel (`Promise.all`) but both hit the DB. Under high concurrency this doubles connection pool pressure.
+- The `pg` connection pool (default: 10) is the first point of saturation. Tuning pool size to match Fargate vCPUs is the first lever.
+- Node.js single-thread is not the bottleneck here — Fastify's async I/O handles concurrent requests well. CPU is idle while waiting on Postgres.
+
+With more time:
+- Replace parallel `COUNT` with window function (`COUNT(*) OVER()`) to eliminate the second query entirely.
+- Add Artillery/k6 stress test to validate the 'indexes are enough without Redis' hypothesis under 5,000 req/s.
+
+---
+
+## Known Limitations & Next Steps
+Deliberate scope decisions within the timebox:
+
+- **Dependency injection**: Constructor injection with default arguments keeps the service testable without a DI container. With more time: Awilix for full IoC across all layers.
+- **Window function pagination**: Currently uses parallel `COUNT(*)` + data query. Migrating to `COUNT(*) OVER()` eliminates the second round-trip.
+- **Rate limiting**: `@fastify/rate-limit` would take ~30 minutes to add. Omitted to stay within scope.
+- **max_distance_km on reverse**: The reverse endpoint accepts an optional cap to avoid returning a hospital 3,000km away as 'nearest'. The parameter is defined in the schema but not yet enforced in the repository WHERE clause.
+- **Stress testing**: The cache decision ('indexes are sufficient') is a reasoned hypothesis, not a measured fact. Artillery/k6 benchmarks are the next validation step.
+
+## Demo UI
+A companion frontend built to demonstrate the API in context: [Live Web Preview](https://hospital-tactical-scan-339084358368.us-west1.run.app/)
+
+- State selector → search by name, city, address or zip code
+- Geolocation-based nearest X hospitals lookup
+- Radius search with interactive km slider
+
+*The UI lives in a separate repository and was not part of the assessment scope. It exists to validate the API contract end-to-end in a realistic usage scenario.*
+
+---
+
+<br />
+
+<div align="center">
+  <sub>Built for Jesus B.</sub>
+</div>

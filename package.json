@@ -14,7 +14,7 @@
     "migrate:up": "node-pg-migrate up",
     "migrate:down": "node-pg-migrate down 1",
     "migrate:create": "node-pg-migrate create",
-    "ingest": "tsx scripts/ingest.ts"
+    "ingest": "tsx scripts/ingest.ts scripts/us_hospital_locations.csv"
   },
   "keywords": [],
   "author": "",
