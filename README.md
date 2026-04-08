@@ -24,3 +24,24 @@ me fui por el A por mas tiempo
 
 /////
 "Con más tiempo extraería la instanciación a un contenedor de DI o al menos a un factory en el entry point, para facilitar el testing con mocks."
+
+///
+Documenta explícitamente que el índice existe porque el flujo de UI filtra por state primero. Esa frase conecta una decisión de infraestructura con una decisión de producto — es exactamente el tipo de razonamiento que diferencia a un tech lead de alguien que solo agrega índices por costumbre.
+
+///
+cambie total por returned en el reverse search, menos ambiguio
+
+///
+## Caching
+
+Deliberately omitted for this scope. The primary bottleneck for geo queries 
+is I/O and query planning, both addressed through PostGIS indexes (GIST, GIN). 
+
+Cache would add value in two specific scenarios:
+- High-frequency identical queries (e.g. /search?q=hospital&state=CA) 
+  → Redis with short TTL on the query hash
+- /hospitals/:id lookups for well-known records 
+  → In-memory LRU cache at the service layer, no Redis needed
+
+Both would be straightforward to add but introduce operational complexity 
+that isn't justified at this dataset size.

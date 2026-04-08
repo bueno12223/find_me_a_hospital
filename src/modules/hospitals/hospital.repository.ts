@@ -1,7 +1,11 @@
 import { query } from '../../config/db.js';
 import { Hospital } from './hospital.schema.js';
 
-const SELECT_COLS = 'id, name, address, city, state, zip, zip4';
+const SELECT_COLS = `
+  id, name, address, city, state, zip, zip4,
+  ST_Y(location::geometry) AS latitude,
+  ST_X(location::geometry) AS longitude
+`;
 
 export class HospitalRepository {
 
@@ -16,14 +20,15 @@ export class HospitalRepository {
     limit: number,
     offset: number,
   ): Promise<{ rows: Hospital[]; total: number }> {
-    let where = `WHERE (name ILIKE $1 OR city ILIKE $1 OR zip = $2)`;
+    let where = `WHERE (name ILIKE $1 OR address ILIKE $1 OR city ILIKE $1 OR zip = $2)`;
     const params: (string | number)[] = [`%${q}%`, q];
 
     if (state) {
-      params.push(state);
+      params.push(state.toUpperCase());
       where += ` AND state = $${params.length}`;
     }
 
+    const whereParamsCount = params.length;
     params.push(q);
     const simIdx = params.length;
 
@@ -31,7 +36,11 @@ export class HospitalRepository {
       SELECT ${SELECT_COLS}
       FROM hospitals
       ${where}
-      ORDER BY similarity(name, $${simIdx}) DESC
+      ORDER BY (
+        similarity(name, $${simIdx}) * 2 + 
+        similarity(COALESCE(address, ''), $${simIdx}) + 
+        similarity(city, $${simIdx})
+      ) DESC
       LIMIT $${params.length + 1} OFFSET $${params.length + 2}
     `;
 
@@ -39,7 +48,7 @@ export class HospitalRepository {
 
     const [dataRes, countRes] = await Promise.all([
       query(dataSql, [...params, limit, offset]),
-      query(countSql, params),
+      query(countSql, params.slice(0, whereParamsCount)),
     ]);
 
     return { rows: dataRes.rows, total: countRes.rows[0].total };

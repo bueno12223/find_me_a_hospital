@@ -10,10 +10,13 @@ export const HospitalSchema = Type.Object({
   state: Type.String({ description: 'Two-letter state code' }),
   zip: Type.String({ description: '5-digit ZIP code' }),
   zip4: Type.Union([Type.String(), Type.Null()], { description: 'ZIP+4 extension' }),
+  latitude: Type.Number({ description: 'Latitude coordinate' }),
+  longitude: Type.Number({ description: 'Longitude coordinate' }),
   distance_meters: Type.Optional(
     Type.Number({ description: 'Distance from query point in meters (geo queries only)' }),
   ),
 });
+
 
 export type Hospital = Static<typeof HospitalSchema>;
 
@@ -23,7 +26,7 @@ const PaginatedHospitalsSchema = PaginatedSchema(HospitalSchema);
 // ── Query / Params schemas ────────────────────────────────────────────────────
 
 export const SearchQuerySchema = Type.Object({
-  q: Type.String({ description: 'Search term (name or address, trigram text search)', minLength: 1 }),
+  q: Type.String({ description: 'Search term (name or address, zip or city)' }),
   state: Type.Optional(Type.String({ description: 'Filter by 2-letter state code (e.g. CA, TX)', minLength: 2, maxLength: 2 })),
   limit: Type.Integer({ description: 'Page size', minimum: 1, maximum: 100, default: 10 }),
   offset: Type.Integer({ description: 'Page offset', minimum: 0, default: 0 }),

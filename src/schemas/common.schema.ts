@@ -1,9 +1,10 @@
 import { Type, TSchema, Static } from '@sinclair/typebox';
 
 export const PaginatedMetaSchema = Type.Object({
-  total: Type.Optional(Type.Integer()),
-  limit: Type.Integer(),
-  offset: Type.Integer(),
+  total: Type.Optional(Type.Integer({ description: 'Total number of records matching the query' })),
+  returned: Type.Optional(Type.Integer({ description: 'Number of records returned in this response' })),
+  limit: Type.Integer({ description: 'Maximum number of records requested' }),
+  offset: Type.Integer({ description: 'Number of records skipped' }),
 });
 
 export type PaginatedMeta = Static<typeof PaginatedMetaSchema>;
