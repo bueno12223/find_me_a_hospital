@@ -27,8 +27,8 @@ interface Row {
 }
 
 function sanitize(raw: CSVRow): Row | null {
-  const name  = raw.NAME?.trim();
-  const city  = raw.CITY?.trim();
+  const name = raw.NAME?.trim();
+  const city = raw.CITY?.trim();
   const state = raw.STATE?.trim().toUpperCase();
 
   if (!name || !city || !state || state.length !== 2) return null;
@@ -104,11 +104,11 @@ async function flushBatch(rows: Row[]): Promise<{ inserted: number; failed: numb
 }
 
 async function ingest(filePath: string): Promise<void> {
-  let buffer: Row[]    = [];
-  let totalInserted    = 0;
-  let totalSkipped     = 0;
-  let totalFailed      = 0;
-  let batchCount       = 0;
+  let buffer: Row[] = [];
+  let totalInserted = 0;
+  let totalSkipped = 0;
+  let totalFailed = 0;
+  let batchCount = 0;
 
   const stream = fs.createReadStream(filePath).pipe(csvParser());
 
@@ -126,17 +126,16 @@ async function ingest(filePath: string): Promise<void> {
       batchCount++;
       const { inserted, failed } = await flushBatch(batch);
       totalInserted += inserted;
-      totalFailed   += failed;
+      totalFailed += failed;
       console.log(`  Batch ${batchCount}: ${inserted} inserted, ${failed} failed`);
     }
   }
 
-  // Flush remaining rows
   if (buffer.length > 0) {
     batchCount++;
     const { inserted, failed } = await flushBatch(buffer);
     totalInserted += inserted;
-    totalFailed   += failed;
+    totalFailed += failed;
     console.log(`  Batch ${batchCount} (final): ${inserted} inserted, ${failed} failed`);
   }
 

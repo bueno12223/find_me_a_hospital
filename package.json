@@ -21,6 +21,9 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@fastify/swagger": "^9.7.0",
+    "@fastify/swagger-ui": "^5.2.5",
+    "@sinclair/typebox": "^0.34.49",
     "csv-parser": "^3.2.0",
     "dotenv": "^17.4.1",
     "fastify": "^5.8.4",

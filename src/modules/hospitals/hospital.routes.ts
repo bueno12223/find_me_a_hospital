@@ -1,48 +1,40 @@
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance } from 'fastify';
 import { HospitalService } from './hospital.service.js';
-import { SearchQuerySchema, ReverseQuerySchema, RadiusQuerySchema, IdParamsSchema } from './hospital.schema.js';
+import {
+  SearchRouteSchema, SearchQuery,
+  ReverseRouteSchema, ReverseQuery,
+  RadiusRouteSchema, RadiusQuery,
+  GetByIdRouteSchema, IdParams,
+} from './hospital.schema.js';
 
 export async function hospitalRoutes(fastify: FastifyInstance) {
   const service = new HospitalService();
 
-  fastify.get('/search', {
-    schema: { querystring: SearchQuerySchema }
-  }, async (request: FastifyRequest<{ Querystring: { q: string, state?: string, limit: number, offset: number } }>, reply: FastifyReply) => {
+  fastify.get<{ Querystring: SearchQuery }>('/search', {
+    schema: SearchRouteSchema,
+  }, async (request) => {
     const { q, state, limit, offset } = request.query;
-    const result = await service.search(q, state, limit, offset);
-    return reply.send(result);
+    return service.search(q, state, limit, offset);
   });
 
-  fastify.get('/reverse', {
-    schema: { querystring: ReverseQuerySchema }
-  }, async (request: FastifyRequest<{ Querystring: { lat: number, lng: number, limit: number } }>, reply: FastifyReply) => {
+  fastify.get<{ Querystring: ReverseQuery }>('/reverse', {
+    schema: ReverseRouteSchema,
+  }, async (request) => {
     const { lat, lng, limit } = request.query;
-    const result = await service.getReverse(lat, lng, limit);
-    return reply.send(result);
+    return service.getReverse(lat, lng, limit);
   });
 
-  fastify.get('/radius', {
-    schema: { querystring: RadiusQuerySchema }
-  }, async (request: FastifyRequest<{ Querystring: { lat: number, lng: number, distance: number, limit: number, offset: number } }>, reply: FastifyReply) => {
+  fastify.get<{ Querystring: RadiusQuery }>('/radius', {
+    schema: RadiusRouteSchema,
+  }, async (request) => {
     const { lat, lng, distance, limit, offset } = request.query;
-    const result = await service.getRadius(lat, lng, distance, limit, offset);
-    return reply.send(result);
+    return service.getRadius(lat, lng, distance, limit, offset);
   });
 
-  fastify.get('/:id', {
-    schema: { params: IdParamsSchema }
-  }, async (request: FastifyRequest<{ Params: { id: number } }>, reply: FastifyReply) => {
+  fastify.get<{ Params: IdParams }>('/:id', {
+    schema: GetByIdRouteSchema,
+  }, async (request) => {
     const { id } = request.params;
-    const result = await service.getById(id);
-    if (!result) {
-      return reply.status(404).send({
-        error: {
-          code: 'NOT_FOUND',
-          message: 'Hospital not found',
-          statusCode: 404
-        }
-      });
-    }
-    return reply.send({ data: result });
+    return { data: await service.getById(id) };
   });
 }
