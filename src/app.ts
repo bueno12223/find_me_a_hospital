@@ -1,6 +1,7 @@
 import fastify from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import cors from '@fastify/cors';
 import { hospitalRoutes } from './modules/hospitals/hospital.routes.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
@@ -8,6 +9,18 @@ export function buildApp(opts = {}) {
   const app = fastify({
     logger: true,
     ...opts
+  });
+
+  app.register(cors, {
+    origin: (origin, cb) => {
+      const allowedOrigins = process.env.CORS_ORIGIN?.split(',') || ['*'];
+      if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        cb(null, true);
+        return;
+      }
+      cb(new Error('Not allowed by CORS'), false);
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   });
 
   app.setErrorHandler(errorHandler);
@@ -49,6 +62,11 @@ export function buildApp(opts = {}) {
   });
 
   app.register(hospitalRoutes, { prefix: '/api/v1/hospitals' });
+
+  app.get('/health', async () => {
+    return { status: 'OK' };
+  });
+
 
   return app;
 }

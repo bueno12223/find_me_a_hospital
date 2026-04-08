@@ -148,10 +148,39 @@ WHERE ST_DWithin(location, ST_MakePoint($1, $2)::geography, $3 * 1000)
 ORDER BY distance_meters
 LIMIT $4;
 ```
+---
+
+## 🚀 Deployment & AWS ECS (Express Mode)
+
+Para desplegar en **Amazon ECS** de forma rápida (Express Mode), utilizaremos **AWS Copilot** o el flujo estándar de **ECR + Fargate**.
+
+### 1. Preparación de Imagen (ECR)
+La app ya incluye un `Dockerfile` multietapa optimizado.
+
+```bash
+# 1. Login en AWS ECR (Reemplaza <region> y <account_id>)
+aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account_id>.dkr.ecr.<region>.amazonaws.com
+
+# 2. Construir imagen
+docker build -t findmehospital .
+
+# 3. Taggeas y subes
+docker tag findmehospital:latest 664418956405.dkr.ecr.us-east-2.amazonaws.com/findmehospital:latest
+docker push 664418956405.dkr.ecr.us-east-2.amazonaws.com/findmehospital:latest
+```
+
+### 2. Configuración en ECS
+- **Health Check:** La app expone `/health`. Configura tu Target Group para usar este endpoint.
+- **Variables de Entorno:** Es crítico pasar `DATABASE_URL` apuntando a tu instancia de RDS (PostgreSQL + PostGIS).
+- **Launch Type:** Recomendado **Fargate** para modo serverless/express.
+
+### 3. Pipeline de Migraciones
+El `Dockerfile` está configurado para ejecutar `pnpm run migrate:up` antes de iniciar el servidor (`CMD`). Esto asegura que tu base de datos en AWS siempre esté sincronizada con el código desplegado.
 
 ---
 
 ## 🚀 Known Limitations & Next Steps
+
 
 Con más tiempo o scope, esto mejoraría notablemente:
 

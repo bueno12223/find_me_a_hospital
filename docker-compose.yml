@@ -1,11 +1,21 @@
-
 services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgres://postgres:password@db:5432/findmehospital?sslmode=disable
+      - CORS_ORIGIN=*
+    depends_on:
+      db:
+        condition: service_healthy
+
   db:
     image: postgis/postgis:15-3.3
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: findmehospital
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=findmehospital
     ports:
       - "5432:5432"
     volumes:
